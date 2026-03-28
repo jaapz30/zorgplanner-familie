@@ -1,10 +1,12 @@
 {
+  "id": "/",
   "name": "Zorgplanner",
   "short_name": "Zorgplanner",
   "description": "Familie-zorgplanner voor ziekenhuisafspraken, vervoer en opvang.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#f0ede8",
   "theme_color": "#1a56db",
   "orientation": "portrait",
@@ -20,6 +22,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
