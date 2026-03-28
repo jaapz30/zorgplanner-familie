@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '32.1';
+const APP_VERSION = '32.2';
 const SCHEMA_VERSION = 32;
 const STORAGE_KEY = 'zorgplanner_v22_data';
 const LEGACY_STORAGE_KEYS = [
