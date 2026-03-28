@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#1a56db">
+
+  <!-- iOS PWA fullscreen -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Zorgplanner">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="format-detection" content="telephone=no">
+
+  <title>Zorgplanner</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="appShell">
+    <header class="topbar">
+      <div class="topbarLeft">
+        <img src="/icons/icon.svg" class="appLogo" alt="" aria-hidden="true">
+        <h1>Zorgplanner</h1>
+      </div>
+      <button id="userButton" class="userBtn" aria-label="Jouw naam instellen">
+        <span id="userButtonLabel">Jouw naam</span>
+      </button>
+    </header>
+
+    <main id="mainContent">
+      <section id="homeView" class="view active"></section>
+      <section id="dayView" class="view"></section>
+      <section id="weekView" class="view"></section>
+      <section id="monthView" class="view"></section>
+      <section id="openView" class="view"></section>
+      <section id="settingsView" class="view"></section>
+    </main>
+
+    <button id="quickAddBtn" class="fab" aria-label="Nieuwe afspraak toevoegen">
+      <span class="fabIcon">+</span> Nieuwe afspraak
+    </button>
+
+    <nav class="bottomNav" aria-label="Hoofdnavigatie">
+      <button data-view="homeView" class="navbtn active">
+        <span class="navIcon">🏠</span>
+        <span class="navLabel">Home</span>
+      </button>
+      <button data-view="dayView" class="navbtn">
+        <span class="navIcon">📅</span>
+        <span class="navLabel">Dag</span>
+      </button>
+      <button data-view="weekView" class="navbtn">
+        <span class="navIcon">📆</span>
+        <span class="navLabel">Week</span>
+      </button>
+      <button data-view="monthView" class="navbtn">
+        <span class="navIcon">🗓️</span>
+        <span class="navLabel">Maand</span>
+      </button>
+      <button data-view="openView" class="navbtn" id="openNavBtn">
+        <span class="navIcon">⚠️</span>
+        <span class="navLabel">Open</span>
+      </button>
+      <button data-view="settingsView" class="navbtn">
+        <span class="navIcon">⚙️</span>
+        <span class="navLabel">Beheer</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Naam dialog -->
+  <dialog id="nameDialog" class="modal">
+    <div class="modalCard">
+      <h2>👋 Welkom bij Zorgplanner</h2>
+      <p class="muted">Vul jouw naam in zodat je jezelf snel kunt kiezen als chauffeur of meerijder.</p>
+      <label for="currentUserName">Jouw naam</label>
+      <input id="currentUserName" type="text" maxlength="80" minlength="2" autocomplete="name" placeholder="Bijv. Jan of Oma Marie">
+      <p id="userNameError" class="fieldMessage errorText" aria-live="polite"></p>
+      <div class="btnRow">
+        <button id="cancelNameBtn" class="ghost">Annuleren</button>
+        <button id="saveUserNameBtn" class="primary">Opslaan</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Afspraak dialog -->
+  <dialog id="appointmentDialog" class="modal">
+    <div class="modalCard wide">
+      <div class="modalHeader">
+        <h2 id="appointmentTitle">Nieuwe afspraak</h2>
+        <button id="closeAppointmentBtn" class="iconBtn" aria-label="Sluiten">✕</button>
+      </div>
+
+      <div class="formGrid">
+        <div>
+          <label for="apptDate">📅 Datum</label>
+          <input id="apptDate" type="date" required>
+        </div>
+        <div>
+          <label for="apptTime">🕐 Tijd</label>
+          <input id="apptTime" list="timeSuggestions" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="5" placeholder="09:00" required aria-describedby="apptTimeHelp apptTimeError" pattern="^([0-2][0-9]:[0-5][0-9]|\d{3,4})$">
+          <p id="apptTimeHelp" class="helper">Gebruik 09:00 of 0900. Geldig: 00:00–23:59.</p>
+          <p id="apptTimeError" class="fieldMessage errorText" aria-live="polite"></p>
+        </div>
+      </div>
+      <div id="timeQuickPicks" class="quickPicks"></div>
+
+      <label for="apptLocation">🏥 Ziekenhuis / locatie</label>
+      <input id="apptLocation" list="locationSuggestions" type="text" maxlength="120" autocomplete="on" placeholder="Bijv. Isala Zwolle">
+      <div id="locationQuickPicks" class="quickPicks"></div>
+
+      <label for="apptDepartment">🔬 Afdeling / poli</label>
+      <input id="apptDepartment" list="departmentSuggestions" type="text" maxlength="120" autocomplete="on" placeholder="Bijv. cardiologie">
+      <div id="departmentQuickPicks" class="quickPicks"></div>
+
+      <label for="apptDescription">📝 Omschrijving</label>
+      <textarea id="apptDescription" rows="2" maxlength="300" placeholder="Bijv. controle na behandeling"></textarea>
+      <div id="descriptionQuickPicks" class="quickPicks"></div>
+
+      <div class="formBlock driverBlock">
+        <label for="apptDriver">🚗 Chauffeur <span class="optional">(optioneel — laat open als nog onbekend)</span></label>
+        <div class="inputWithBtn">
+          <input id="apptDriver" list="nameSuggestions" type="text" maxlength="80" minlength="2" autocomplete="on" placeholder="Naam typen of kiezen" aria-describedby="apptDriverError">
+          <button type="button" id="useMeAsDriver" class="meBtn">Ik rijd</button>
+        </div>
+        <p id="apptDriverError" class="fieldMessage errorText" aria-live="polite"></p>
+      </div>
+
+      <div class="formBlock">
+        <label for="apptPassengers">👥 Mee naar afspraak <span class="optional">(optioneel)</span></label>
+        <div class="inputWithBtn">
+          <input id="apptPassengers" list="nameSuggestions" type="text" maxlength="80" minlength="2" autocomplete="on" placeholder="Naam typen" aria-describedby="apptPassengersError">
+          <button type="button" id="addPassengerBtn" class="addBtn">+ Voeg toe</button>
+        </div>
+        <p id="apptPassengersError" class="fieldMessage errorText" aria-live="polite"></p>
+        <div id="passengerChips" class="chipWrap"></div>
+        <button type="button" id="useMeAsPassenger" class="selfBtn">Ik ga mee</button>
+      </div>
+
+      <div class="formBlock careBlock">
+        <label for="apptCareOption">🧸 Oppas / opvang <span class="optional">(optioneel — laat open als nog onbekend)</span></label>
+        <div class="inputWithBtn">
+          <input id="apptCareOption" list="careSuggestions" type="text" maxlength="80" minlength="2" autocomplete="on" placeholder="Bijv. opvang, buurvrouw, thuiszorg" aria-describedby="apptCareError">
+          <button type="button" id="addCareBtn" class="addBtn">+ Voeg toe</button>
+        </div>
+        <p id="apptCareError" class="fieldMessage errorText" aria-live="polite"></p>
+        <div id="careChips" class="chipWrap"></div>
+        <button type="button" id="useMeAsCare" class="selfBtn">Ik pas op</button>
+      </div>
+
+      <label for="apptNote">💬 Extra notitie</label>
+      <textarea id="apptNote" rows="2" maxlength="300" placeholder="Bijv. rolstoel mee, 15 min eerder aanwezig"></textarea>
+
+      <div class="formActions">
+        <button type="button" id="saveAppointmentBtn" class="primary">💾 Opslaan</button>
+        <button type="button" id="deleteAppointmentBtn" class="danger hidden">🗑️ Verwijderen</button>
+        <button type="button" id="cancelAppointmentBtn" class="ghost">Annuleren</button>
+      </div>
+      <ul id="appointmentErrorList" class="errorList hidden" aria-live="polite"></ul>
+      <p id="saveMessage" class="saveMessage" aria-live="polite"></p>
+    </div>
+  </dialog>
+
+  <!-- Beheer dialog -->
+  <dialog id="manageDialog" class="modal">
+    <div class="modalCard">
+      <div class="modalHeader">
+        <h2>⚙️ Beheer</h2>
+        <button id="closeManageBtn" class="iconBtn" aria-label="Sluiten">✕</button>
+      </div>
+
+      <section class="manageSection">
+        <h3>👤 Namen</h3>
+        <p class="muted">Namen voor chauffeur en meerijder. Vrij te typen of hier toe te voegen.</p>
+        <div class="inputWithBtn">
+          <input id="manageNameInput" type="text" maxlength="80" placeholder="Nieuwe naam">
+          <button type="button" id="addManageNameBtn" class="primary">Toevoegen</button>
+        </div>
+        <p id="manageNameError" class="fieldMessage errorText" aria-live="polite"></p>
+        <div id="manageNamesList" class="chipWrap"></div>
+      </section>
+
+      <section class="manageSection">
+        <h3>🧸 Oppas / opvang opties</h3>
+        <p class="muted">Veelgebruikte opties. Je kunt ook altijd vrij typen bij de afspraak.</p>
+        <div class="inputWithBtn">
+          <input id="manageCareInput" type="text" maxlength="80" placeholder="Bijv. buurvrouw, thuiszorg">
+          <button type="button" id="addManageCareBtn" class="primary">Toevoegen</button>
+        </div>
+        <div id="manageCareList" class="chipWrap"></div>
+      </section>
+
+      <section class="manageSection">
+        <h3>🔄 Delen met familie</h3>
+        <p class="muted">Deelcode: kopieer en plak om gegevens tussen apparaten over te zetten. Let op: dit is nog geen live familiesynchronisatie.</p>
+        <div class="btnRow">
+          <button type="button" id="copyShareCodeBtn" class="ghost">📋 Kopieer deelcode</button>
+          <button type="button" id="pasteShareCodeBtn" class="ghost">📥 Plak deelcode</button>
+        </div>
+        <div id="shareCodeArea" class="hidden">
+          <label for="shareCodeInput">Plak hier de ontvangen code:</label>
+          <textarea id="shareCodeInput" rows="4" placeholder="Plak hier de code..."></textarea>
+          <div class="btnRow">
+            <button type="button" id="importShareCodeBtn" class="primary">Importeren</button>
+            <button type="button" id="cancelShareCodeBtn" class="ghost">Annuleren</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="manageSection">
+        <h3>💾 Back-up als bestand</h3>
+        <p class="muted">Exporteer als JSON-bestand of importeer een eerder gemaakte back-up.</p>
+        <div class="btnRow">
+          <button type="button" id="exportBtn" class="ghost">⬇️ Exporteer</button>
+          <label class="importLabel ghost">
+            <span>⬆️ Importeer</span>
+            <input id="importInput" type="file" accept="application/json">
+          </label>
+        </div>
+        <p class="helper">Importeren overschrijft de huidige gegevens op dit apparaat. Maak dus eerst een back-up als je twijfelt.</p>
+      </section>
+    </div>
+  </dialog>
+
+  <!-- Bevestig verwijder dialog -->
+  <dialog id="confirmDialog" class="modal">
+    <div class="modalCard narrow">
+      <h2>🗑️ Afspraak verwijderen?</h2>
+      <p class="muted">Dit kan niet ongedaan worden gemaakt.</p>
+      <div class="btnRow">
+        <button id="confirmCancelBtn" class="ghost">Annuleren</button>
+        <button id="confirmDeleteBtn" class="danger">Definitief verwijderen</button>
+      </div>
+    </div>
+  </dialog>
+
+  <datalist id="nameSuggestions"></datalist>
+  <datalist id="careSuggestions"></datalist>
+  <datalist id="timeSuggestions"></datalist>
+  <datalist id="locationSuggestions"></datalist>
+  <datalist id="departmentSuggestions"></datalist>
+  <datalist id="descriptionSuggestions"></datalist>
+
+  <!-- Familie koppeling dialog -->
+  <dialog id="familyDialog" class="modal">
+    <div class="modalCard narrow">
+      <div class="modalHeader">
+        <h2>👨‍👩‍👧‍👦 Familie verbinden</h2>
+        <button id="closeFamilyBtn" class="iconBtn" aria-label="Sluiten">✕</button>
+      </div>
+      <p class="muted">Voer de familiecode in om afspraken te delen en samen te werken. Iedereen met dezelfde code ziet dezelfde afspraken.</p>
+      <label for="familyCodeInput">Familiecode</label>
+      <input id="familyCodeInput" type="text" maxlength="40" placeholder="Bijv. Liesbeth" autocomplete="off" autocapitalize="off">
+      <p id="familyCodeError" class="fieldMessage errorText" aria-live="polite"></p>
+      <div class="btnRow">
+        <button id="joinFamilyBtn" class="primary">Verbinden</button>
+        <button id="closeFamilyBtn2" class="ghost" onclick="document.getElementById('familyDialog').close()">Annuleren</button>
+      </div>
+      <p class="helper" style="margin-top:16px">De code is hoofdletterongevoelig. Vraag de code op bij de beheerder van de Zorgplanner.</p>
+    </div>
+  </dialog>
+
+  <div id="appToast" class="appToast hidden" role="status" aria-live="polite">
+    <div id="toastMessage" class="toastMessage"></div>
+    <div class="toastActions">
+      <button id="toastActionBtn" class="primary small hidden" type="button">Vernieuwen</button>
+      <button id="toastCloseBtn" class="ghost small" type="button" aria-label="Melding sluiten">Sluiten</button>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
