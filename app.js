@@ -1,7 +1,7 @@
 'use strict';
 
-const APP_VERSION = '31';
-const SCHEMA_VERSION = 31;
+const APP_VERSION = '32';
+const SCHEMA_VERSION = 32;
 const STORAGE_KEY = 'zorgplanner_v22_data';
 const LEGACY_STORAGE_KEYS = [
   'zorgplanner_v21_data',
@@ -9,6 +9,10 @@ const LEGACY_STORAGE_KEYS = [
   'zorgplanner_v16_data',
   'zorgplanner_v13_data'
 ];
+
+const API_URL = '/api/appointments';
+const API_AUTH = 'liesbeth';
+
 const NAME_MIN = 2;
 const NAME_MAX = 80;
 const NAME_RE = /^[\p{L}0-9][\p{L}0-9 .,'''\-()]*$/u;
@@ -23,13 +27,14 @@ const EMPTY_STATE = {
   appointments: []
 };
 
-let state = loadState();
+let state = structuredCloneSafe(EMPTY_STATE);
 let currentView = 'homeView';
 let selectedDate = todayString();
-let selectedMonthDate = todayString(); // separate month navigation state
+let selectedMonthDate = todayString();
 let editingId = null;
 let tempPassengers = [];
 let tempCare = [];
+let syncInProgress = false;
 
 const els = {
   views: document.querySelectorAll('.view'),
@@ -119,17 +124,34 @@ const els = {
   descriptionSuggestions: document.getElementById('descriptionSuggestions')
 };
 
-init();
+init().catch(() => {
+  state = loadStateLocal();
+  refreshAll();
+  if (!state.currentUser) openNameDialog();
+});
 
-function init() {
+async function init() {
   attachEvents();
   ensureStateShape();
   selectedDate = todayString();
   selectedMonthDate = todayString();
-  refreshAll();
-  if (!state.currentUser) openNameDialog();
   clearValidationState();
   registerServiceWorker();
+
+  await loadStateFromServer();
+  refreshAll();
+
+  if (!state.currentUser) openNameDialog();
+
+  window.addEventListener('focus', () => {
+    syncFromServerAndRefresh();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      syncFromServerAndRefresh();
+    }
+  });
 }
 
 function attachEvents() {
@@ -150,6 +172,7 @@ function attachEvents() {
     e.preventDefault();
     openAppointmentDialog();
   }, { passive: false });
+
   els.userButton.addEventListener('click', openNameDialog);
 
   els.saveUserNameBtn.addEventListener('click', saveUserName);
@@ -169,10 +192,12 @@ function attachEvents() {
     if (!state.currentUser) return openNameDialog();
     els.apptDriver.value = state.currentUser;
   });
+
   els.useMeAsPassenger.addEventListener('click', () => {
     if (!state.currentUser) return openNameDialog();
     addTempPassenger(state.currentUser);
   });
+
   els.useMeAsCare.addEventListener('click', () => {
     if (!state.currentUser) return openNameDialog();
     addTempCare(state.currentUser);
@@ -183,12 +208,14 @@ function attachEvents() {
     els.apptPassengers.value = '';
     els.apptPassengers.focus();
   });
+
   els.apptPassengers.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
       els.addPassengerBtn.click();
     }
   });
+
   els.apptPassengers.addEventListener('blur', () => {
     const value = cleanText(els.apptPassengers.value);
     if (!value) return;
@@ -210,12 +237,14 @@ function attachEvents() {
     els.apptCareOption.value = '';
     els.apptCareOption.focus();
   });
+
   els.apptCareOption.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
       els.addCareBtn.click();
     }
   });
+
   els.apptCareOption.addEventListener('blur', () => {
     const value = cleanText(els.apptCareOption.value);
     if (!value) return;
@@ -228,6 +257,7 @@ function attachEvents() {
   els.confirmCancelBtn.addEventListener('click', () => els.confirmDialog.close());
 
   els.closeManageBtn.addEventListener('click', () => els.manageDialog.close());
+
   els.addManageNameBtn.addEventListener('click', () => {
     const value = cleanText(els.manageNameInput.value);
     const error = validatePersonName(value, 'Naam');
@@ -245,9 +275,11 @@ function attachEvents() {
     renderManageDialog();
     showToast('Naam toegevoegd.');
   });
+
   els.manageNameInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') els.addManageNameBtn.click();
   });
+
   els.addManageCareBtn.addEventListener('click', () => {
     const value = cleanText(els.manageCareInput.value);
     if (!value) return;
@@ -257,6 +289,7 @@ function attachEvents() {
     renderManageDialog();
     showToast('Oppas- of opvangoptie toegevoegd.');
   });
+
   els.manageCareInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') els.addManageCareBtn.click();
   });
@@ -269,6 +302,7 @@ function attachEvents() {
       els.shareCodeInput.focus();
     }
   });
+
   els.importShareCodeBtn.addEventListener('click', () => importShareCode(els.shareCodeInput.value));
   els.cancelShareCodeBtn.addEventListener('click', () => {
     els.shareCodeArea.classList.add('hidden');
@@ -310,6 +344,7 @@ function renderUserButton() {
 function renderNavBadge() {
   const existing = els.openNavBtn.querySelector('.navBadge');
   if (existing) existing.remove();
+
   const count = state.appointments.filter(a => appointmentStatus(a).key !== 'green').length;
   if (count > 0) {
     const badge = document.createElement('span');
@@ -381,14 +416,17 @@ function renderDay() {
   }
 
   els.dayView.innerHTML = html;
+
   document.getElementById('prevDayBtn')?.addEventListener('click', () => {
     selectedDate = addDays(selectedDate, -1);
     renderDay();
   });
+
   document.getElementById('nextDayBtn')?.addEventListener('click', () => {
     selectedDate = addDays(selectedDate, 1);
     renderDay();
   });
+
   bindDynamicActions(els.dayView);
 }
 
@@ -418,33 +456,39 @@ function renderWeek() {
     const date = weekDates[i];
     const dayAppts = getAppointmentsForDate(date);
     const isToday = date === todayString();
+
     html += `<section class="weekDayBlock ${isToday ? 'isToday' : ''}">`;
     html += `<div class="weekDayTitle">${escapeHtml(formatDateDutch(date))}${isToday ? ' <span class="todayBadge">Vandaag</span>' : ''}`;
+
     if (dayAppts.length) {
       html += `<span class="miniStatus ${dayStatus(date)}"></span><span class="miniCount">${dayAppts.length}</span>`;
     }
+
     html += `</div>`;
+
     if (!dayAppts.length) {
       html += '<div class="emptyState">Geen planning voor deze dag.</div>';
     } else {
       dayAppts.forEach(a => { html += cardHtml(a, { compact: true }); });
     }
+
     html += '</section>';
   }
 
   els.weekView.innerHTML = html;
+
   document.getElementById('prevWeekBtn')?.addEventListener('click', () => {
     selectedDate = addDays(monday, -7);
     renderWeek();
   });
+
   document.getElementById('nextWeekBtn')?.addEventListener('click', () => {
     selectedDate = addDays(monday, 7);
     renderWeek();
   });
+
   bindDynamicActions(els.weekView);
 }
-
-// ── MONTH VIEW (v22: full rewrite for clarity and readability) ───────────────
 
 function renderMonth() {
   const first = monthStart(selectedMonthDate);
@@ -470,7 +514,7 @@ function renderMonth() {
       </div>
 
       <div class="monthGridHeader">
-        ${['Ma','Di','Wo','Do','Vr','Za','Zo'].map(d => `<div class="weekdayLabel">${d}</div>`).join('')}
+        ${['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'].map(d => `<div class="weekdayLabel">${d}</div>`).join('')}
       </div>
       <div class="monthGrid">`;
 
@@ -529,6 +573,7 @@ function renderMonth() {
     }
     renderMonth();
   });
+
   document.getElementById('nextMonthBtn')?.addEventListener('click', () => {
     selectedMonthDate = addMonths(first, 1);
     if (!selectedDate.startsWith(selectedMonthDate.slice(0, 7))) {
@@ -560,6 +605,7 @@ function renderMonth() {
 function renderOpenTasks() {
   const open = state.appointments.filter(a => appointmentStatus(a).key !== 'green');
   let html = '<section class="card"><h2 class="sectionTitle">Open taken</h2>';
+
   if (!open.length) {
     html += '<div class="emptyState">Er staan nu geen open taken. ✓</div>';
   } else {
@@ -576,6 +622,7 @@ function renderOpenTasks() {
         </div>`;
     });
   }
+
   html += '</section>';
   els.openView.innerHTML = html;
   bindDynamicActions(els.openView);
@@ -602,13 +649,13 @@ function renderSettings() {
       <div class="openTaskRow">
         <div class="openTaskInfo">
           <strong>Afspraken</strong>
-          <div class="muted">${state.appointments.length} opgeslagen op dit apparaat</div>
+          <div class="muted">${state.appointments.length} gedeeld opgeslagen</div>
         </div>
       </div>
       <div class="openTaskRow">
         <div class="openTaskInfo">
           <strong>Versie</strong>
-          <div class="muted">Zorgplanner v${APP_VERSION} • lokaal opgeslagen op dit apparaat</div>
+          <div class="muted">Zorgplanner v${APP_VERSION} • familie-sync actief</div>
         </div>
       </div>
     </section>
@@ -628,6 +675,7 @@ function renderManageDialog() {
   els.manageNamesList.innerHTML = state.names.length
     ? state.names.map(v => chipHtml(v, 'remove-name')).join('')
     : '<div class="emptyState" style="font-size:.95rem">Nog geen namen toegevoegd.</div>';
+
   els.manageCareList.innerHTML = state.careOptions.length
     ? state.careOptions.map(v => chipHtml(v, 'remove-care')).join('')
     : '<div class="emptyState" style="font-size:.95rem">Nog geen opvangopties toegevoegd.</div>';
@@ -693,6 +741,7 @@ function openAppointmentDialog(id = null) {
     els.apptNote.value = '';
     els.deleteAppointmentBtn.classList.add('hidden');
   }
+
   els.apptPassengers.value = '';
   els.apptCareOption.value = '';
   clearAppointmentErrors();
@@ -739,6 +788,7 @@ function saveAppointment() {
   const passengerErrors = passengers
     .map(name => validateOptionalPersonName(name, 'Naam bij mee naar afspraak'))
     .filter(Boolean);
+
   if (passengerErrors.length) {
     setFieldError(els.apptPassengers, passengerErrors[0], els.passengerError);
     errors.push({ field: els.apptPassengers, message: passengerErrors[0] });
@@ -747,6 +797,7 @@ function saveAppointment() {
   const careErrors = care
     .map(value => validateOptionalPersonName(value, 'Oppas / opvang'))
     .filter(Boolean);
+
   if (careErrors.length) {
     setFieldError(els.apptCareOption, careErrors[0], els.careError);
     errors.push({ field: els.apptCareOption, message: careErrors[0] });
@@ -808,7 +859,6 @@ function deleteAppointment() {
   closeAppointmentDialog();
 }
 
-
 function splitManualEntryValues(value) {
   return uniqueStrings(
     String(value || '')
@@ -822,6 +872,7 @@ function commitPendingPassengers() {
   const values = splitManualEntryValues(els.apptPassengers.value);
   if (!values.length) return;
   let hasError = false;
+
   values.forEach(value => {
     const before = tempPassengers.length;
     addTempPassenger(value);
@@ -829,6 +880,7 @@ function commitPendingPassengers() {
       hasError = true;
     }
   });
+
   if (!hasError) {
     els.apptPassengers.value = '';
   }
@@ -838,6 +890,7 @@ function commitPendingCare() {
   const values = splitManualEntryValues(els.apptCareOption.value);
   if (!values.length) return;
   let hasError = false;
+
   values.forEach(value => {
     const before = tempCare.length;
     addTempCare(value);
@@ -845,6 +898,7 @@ function commitPendingCare() {
       hasError = true;
     }
   });
+
   if (!hasError) {
     els.apptCareOption.value = '';
   }
@@ -883,12 +937,14 @@ function addTempCare(value) {
 function renderTempChips() {
   els.passengerChips.innerHTML = tempPassengers.map(v => chipHtml(v, 'remove-passenger')).join('');
   els.careChips.innerHTML = tempCare.map(v => chipHtml(v, 'remove-care-temp')).join('');
+
   els.passengerChips.querySelectorAll('[data-remove-passenger]').forEach(btn => {
     btn.addEventListener('click', () => {
       tempPassengers = tempPassengers.filter(v => v !== btn.dataset.removePassenger);
       renderTempChips();
     });
   });
+
   els.careChips.querySelectorAll('[data-remove-care-temp]').forEach(btn => {
     btn.addEventListener('click', () => {
       tempCare = tempCare.filter(v => v !== btn.dataset.removeCareTemp);
@@ -937,10 +993,12 @@ function renderContextSuggestions(container, values, query, onPick) {
   let items = uniqueStrings(values || []).filter(Boolean);
   items = q ? items.filter(v => v.toLocaleLowerCase('nl-NL').includes(q)) : items;
   items = items.slice(0, 3);
+
   if (!items.length) {
     container.innerHTML = '';
     return;
   }
+
   container.innerHTML = items.map(v => `<button type="button" class="quickPickBtn" data-quick-pick="${escapeHtmlAttr(v)}">${escapeHtml(v)}</button>`).join('');
   container.querySelectorAll('[data-quick-pick]').forEach(btn => {
     btn.addEventListener('mousedown', e => e.preventDefault());
@@ -955,6 +1013,7 @@ function bindDynamicActions(root) {
   root.querySelectorAll('[data-edit]').forEach(btn => {
     btn.addEventListener('click', () => openAppointmentDialog(btn.dataset.edit));
   });
+
   root.querySelectorAll('[data-open-view]').forEach(btn => {
     btn.addEventListener('click', () => setView(btn.dataset.openView));
   });
@@ -965,6 +1024,7 @@ function cardHtml(a, options = {}) {
   const compact = Boolean(options.compact);
   const noMargin = Boolean(options.noMargin);
   const klass = ['card', compact ? 'compactCard' : '', noMargin ? 'noMargin' : ''].filter(Boolean).join(' ');
+
   return `
     <section class="${klass}">
       <div class="cardTopRow">
@@ -990,6 +1050,7 @@ function cardHtml(a, options = {}) {
 function appointmentStatus(a) {
   const hasDriver = Boolean(cleanText(a.driver));
   const hasCare = Array.isArray(a.care) && a.care.some(v => cleanText(v));
+
   if (hasDriver && hasCare) return { key: 'green', label: 'Geregeld', reason: 'Alles is geregeld.' };
   if (!hasDriver && !hasCare) return { key: 'red', label: 'Actie nodig', reason: 'Chauffeur en oppas/opvang ontbreken.' };
   if (!hasDriver) return { key: 'orange', label: 'Deels geregeld', reason: 'Chauffeur ontbreekt nog.' };
@@ -1105,10 +1166,11 @@ function exportData() {
       appVersion: APP_VERSION,
       schemaVersion: SCHEMA_VERSION,
       exportedAt: new Date().toISOString(),
-      mode: 'local-first'
+      mode: 'family-sync'
     },
     data: sanitizeState(state)
   };
+
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1123,6 +1185,7 @@ function importData(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   const reader = new FileReader();
+
   reader.onload = () => {
     const result = importPayload(String(reader.result || '{}'));
     if (!result.ok) {
@@ -1130,6 +1193,7 @@ function importData(event) {
       event.target.value = '';
       return;
     }
+
     state = result.state;
     selectedDate = todayString();
     selectedMonthDate = todayString();
@@ -1137,6 +1201,7 @@ function importData(event) {
     showToast(result.message || 'Back-up geïmporteerd.');
     event.target.value = '';
   };
+
   reader.readAsText(file);
 }
 
@@ -1165,6 +1230,7 @@ function importShareCode(code) {
     showToast('Plak eerst een deelcode.', true);
     return;
   }
+
   let decodedText = '';
   try {
     decodedText = decodeURIComponent(escape(atob(clean)));
@@ -1172,11 +1238,13 @@ function importShareCode(code) {
     showToast('Deelcode ongeldig.', true);
     return;
   }
+
   const result = importPayload(decodedText);
   if (!result.ok) {
     showToast(result.message || 'Deelcode ongeldig.', true);
     return;
   }
+
   state = result.state;
   selectedDate = todayString();
   selectedMonthDate = todayString();
@@ -1192,6 +1260,7 @@ function importPayload(rawText) {
     const source = parsed && typeof parsed === 'object' && parsed.data ? parsed.data : parsed;
     const importedState = sanitizeState(source);
     const totalAppointments = Array.isArray(importedState.appointments) ? importedState.appointments.length : 0;
+
     return {
       ok: true,
       state: importedState,
@@ -1269,6 +1338,7 @@ function showToast(message, isError = false, actionLabel = '', action = null) {
   els.toastMessage.textContent = message || '';
   els.toast.classList.remove('hidden', 'isError');
   if (isError) els.toast.classList.add('isError');
+
   if (els.toastActionBtn) {
     if (actionLabel && typeof action === 'function') {
       els.toastActionBtn.textContent = actionLabel;
@@ -1280,7 +1350,7 @@ function showToast(message, isError = false, actionLabel = '', action = null) {
       els.toastActionBtn.classList.add('hidden');
     }
   }
-  // Auto-hide after 4 seconds for non-error toasts
+
   if (!isError && !actionLabel) {
     setTimeout(() => hideToast(), 4000);
   }
@@ -1320,15 +1390,17 @@ function validateOptionalPersonName(value, label) {
 }
 
 function persistAndRefresh() {
-  saveState();
+  state = sanitizeState(state);
+  saveStateLocal(state);
   refreshAll();
+  syncStateToServer();
 }
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeState(state)));
+function saveStateLocal(data = state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeState(data)));
 }
 
-function loadState() {
+function loadStateLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return sanitizeState(JSON.parse(raw));
@@ -1349,9 +1421,76 @@ function loadState() {
   }
 }
 
+async function loadStateFromServer() {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'GET',
+      headers: {
+        'Authorization': API_AUTH
+      },
+      cache: 'no-store'
+    });
+
+    if (!res.ok) throw new Error('Server load failed');
+
+    const data = await res.json();
+    state = sanitizeState(data);
+    saveStateLocal(state);
+  } catch {
+    state = loadStateLocal();
+  }
+}
+
+async function syncStateToServer() {
+  if (syncInProgress) return;
+  syncInProgress = true;
+
+  try {
+    const payload = sanitizeState(state);
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': API_AUTH
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      throw new Error('Server save failed');
+    }
+  } catch {
+    showToast('Opslaan online is mislukt. Alleen lokaal bewaard.', true);
+  } finally {
+    syncInProgress = false;
+  }
+}
+
+async function syncFromServerAndRefresh() {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'GET',
+      headers: {
+        'Authorization': API_AUTH
+      },
+      cache: 'no-store'
+    });
+
+    if (!res.ok) return;
+
+    const data = await res.json();
+    state = sanitizeState(data);
+    saveStateLocal(state);
+    refreshAll();
+  } catch {
+    // stil falen
+  }
+}
+
 function sanitizeState(input) {
   const safe = structuredCloneSafe(EMPTY_STATE);
   const source = input && typeof input === 'object' && input.data ? input.data : input;
+
   if (source && typeof source === 'object') {
     safe.currentUser = cleanText(source.currentUser || '');
     safe.names = uniqueStrings(Array.isArray(source.names) ? source.names.map(cleanText).filter(Boolean) : []);
@@ -1364,6 +1503,7 @@ function sanitizeState(input) {
       ? source.appointments.map(sanitizeAppointment).filter(Boolean)
       : [];
   }
+
   return safe;
 }
 
@@ -1372,6 +1512,7 @@ function sanitizeAppointment(a) {
   const date = normalizeDateInput(a.date);
   const time = normalizeTimeInput(a.time);
   if (!date || !time) return null;
+
   return {
     id: cleanText(a.id) || generateId(),
     date,
@@ -1405,6 +1546,7 @@ function chipHtml(value, mode) {
       : mode === 'remove-passenger'
         ? `data-remove-passenger="${escapeHtmlAttr(value)}"`
         : `data-remove-care-temp="${escapeHtmlAttr(value)}"`;
+
   return `<span class="chip">${escapeHtml(value)}<button type="button" ${attr} aria-label="Verwijderen">×</button></span>`;
 }
 
@@ -1538,11 +1680,6 @@ function localeSort(a, b) {
   return a.localeCompare(b, 'nl', { sensitivity: 'base' });
 }
 
-function shortText(text, len) {
-  const clean = cleanText(text);
-  return clean.length > len ? `${clean.slice(0, len - 1)}…` : clean;
-}
-
 function generateId() {
   return `appt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -1566,8 +1703,10 @@ function escapeHtmlAttr(value) {
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
+
   try {
     let refreshing = false;
+
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (refreshing) return;
       refreshing = true;
@@ -1578,10 +1717,11 @@ async function registerServiceWorker() {
       scope: '/',
       updateViaCache: 'none'
     });
+
     reg.update();
 
     if (reg.waiting) {
-      showToast(`Nieuwe versie beschikbaar.`, false, 'Vernieuwen', () => {
+      showToast('Nieuwe versie beschikbaar.', false, 'Vernieuwen', () => {
         reg.waiting.postMessage({ type: 'SKIP_WAITING' });
       });
     }
@@ -1589,9 +1729,10 @@ async function registerServiceWorker() {
     reg.addEventListener('updatefound', () => {
       const newWorker = reg.installing;
       if (!newWorker) return;
+
       newWorker.addEventListener('statechange', () => {
         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-          showToast(`Update beschikbaar.`, false, 'Vernieuwen', () => {
+          showToast('Update beschikbaar.', false, 'Vernieuwen', () => {
             newWorker.postMessage({ type: 'SKIP_WAITING' });
           });
         }
