@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '32.2';
+const APP_VERSION = '32.3';
 const SCHEMA_VERSION = 32;
 const STORAGE_KEY = 'zorgplanner_v22_data';
 const LEGACY_STORAGE_KEYS = [
@@ -12,6 +12,7 @@ const LEGACY_STORAGE_KEYS = [
 
 const API_URL = '/api/appointments';
 const API_AUTH = 'liesbeth';
+const LAST_SEEN_KEY = 'zorgplanner_last_seen_at';
 
 const NAME_MIN = 2;
 const NAME_MAX = 80;
@@ -35,6 +36,7 @@ let editingId = null;
 let tempPassengers = [];
 let tempCare = [];
 let syncInProgress = false;
+let lastSeenAt = loadLastSeenAt();
 
 const els = {
   views: document.querySelectorAll('.view'),
@@ -152,6 +154,8 @@ async function init() {
       syncFromServerAndRefresh();
     }
   });
+
+  markCurrentAppointmentsAsSeenSoon();
 }
 
 function attachEvents() {
@@ -421,7 +425,12 @@ function renderNavBadge() {
 function renderHome() {
   const upcoming = getUpcomingAppointment();
   const openItems = state.appointments.filter(a => appointmentStatus(a).key !== 'green').slice(0, 4);
+  const newCount = getNewAppointments().length;
   let html = '';
+
+  if (newCount > 0) {
+    html += `<section class="card"><div class="openTaskInfo"><strong>${newCount === 1 ? 'Er is 1 nieuwe afspraak toegevoegd.' : `Er zijn ${newCount} nieuwe afspraken toegevoegd.`}</strong></div></section>`;
+  }
 
   html += '<section class="card">';
   html += '<h2 class="sectionTitle">Eerstvolgende afspraak</h2>';
@@ -442,7 +451,7 @@ function renderHome() {
       html += `
         <div class="openTaskRow">
           <div class="openTaskInfo">
-            <strong>${escapeHtml(formatDateDutch(a.date))} • ${escapeHtml(a.time)}</strong>
+            <strong>${escapeHtml(formatDateDutch(a.date))} • ${escapeHtml(a.time)}${isAppointmentNew(a) ? ' • Nieuw' : ''}</strong>
             <div class="muted">${escapeHtml(a.location || 'Locatie onbekend')}</div>
             <div class="reason">${escapeHtml(st.reason)}</div>
           </div>
@@ -678,7 +687,7 @@ function renderOpenTasks() {
       html += `
         <div class="openTaskRow">
           <div class="openTaskInfo">
-            <strong>${escapeHtml(formatDateDutch(a.date))} • ${escapeHtml(a.time)}</strong>
+            <strong>${escapeHtml(formatDateDutch(a.date))} • ${escapeHtml(a.time)}${isAppointmentNew(a) ? ' • Nieuw' : ''}</strong>
             <div class="muted">${escapeHtml(a.location || 'Locatie onbekend')}</div>
             <div class="reason">${escapeHtml(st.reason)}</div>
           </div>
@@ -1033,13 +1042,14 @@ function cardHtml(a, options = {}) {
   const compact = Boolean(options.compact);
   const noMargin = Boolean(options.noMargin);
   const klass = ['card', compact ? 'compactCard' : '', noMargin ? 'noMargin' : ''].filter(Boolean).join(' ');
+  const isNew = isAppointmentNew(a);
 
   return `
     <section class="${klass}">
       <div class="cardTopRow">
         <div>
           <div class="apptHeading">${escapeHtml(a.time)} • ${escapeHtml(a.location || 'Locatie onbekend')}</div>
-          <div class="apptSub">${escapeHtml(a.department || a.description || '')}</div>
+          <div class="apptSub">${escapeHtml(a.department || '')}${isNew ? ' • Nieuw' : ''}</div>
         </div>
         <span class="statusBadge status-${st.key}">${st.label}</span>
       </div>
@@ -1048,6 +1058,7 @@ function cardHtml(a, options = {}) {
         <div><strong>Chauffeur</strong><span>${escapeHtml(a.driver || '— open')}</span></div>
         <div><strong>Mee naar afspraak</strong><span>${escapeHtml((a.passengers || []).join(', ') || 'Geen')}</span></div>
         <div><strong>Oppas / opvang</strong><span>${escapeHtml((a.care || []).join(', ') || '— open')}</span></div>
+        ${a.description ? `<div><strong>Omschrijving</strong><span>${escapeHtml(a.description)}</span></div>` : ''}
         ${a.note ? `<div><strong>Notitie</strong><span>${escapeHtml(a.note)}</span></div>` : ''}
       </div>
       <div class="btnRow">
@@ -1095,6 +1106,43 @@ function getAppointmentsForDate(date) {
 
 function sortAppointments(list) {
   return [...list].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+}
+
+function loadLastSeenAt() {
+  try {
+    return localStorage.getItem(LAST_SEEN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function saveLastSeenAt(value) {
+  try {
+    localStorage.setItem(LAST_SEEN_KEY, value);
+  } catch {
+    // stil falen
+  }
+}
+
+function getNewAppointments() {
+  if (!lastSeenAt) return [];
+  return state.appointments.filter(isAppointmentNew);
+}
+
+function isAppointmentNew(appointment) {
+  if (!lastSeenAt) return false;
+  const createdAt = cleanText(appointment?.createdAt || '');
+  if (!createdAt) return false;
+  return createdAt > lastSeenAt;
+}
+
+function markCurrentAppointmentsAsSeenSoon() {
+  setTimeout(() => {
+    const now = new Date().toISOString();
+    lastSeenAt = now;
+    saveLastSeenAt(now);
+    refreshAll();
+  }, 1200);
 }
 
 function saveUserName() {
@@ -1491,6 +1539,7 @@ async function syncFromServerAndRefresh() {
     state = sanitizeState(data);
     saveStateLocal(state);
     refreshAll();
+    markCurrentAppointmentsAsSeenSoon();
   } catch {
     // stil falen
   }
