@@ -1,13 +1,13 @@
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    const auth = request.headers.get("Authorization");
-    if (auth !== "liesbeth") {
-      return new Response("Unauthorized", { status: 401 });
-    }
-
+    // Alleen de API afhandelen
     if (url.pathname === "/api/appointments") {
+      const auth = request.headers.get("Authorization");
+      if (auth !== "liesbeth") {
+        return new Response("Unauthorized", { status: 401 });
+      }
 
       if (request.method === "GET") {
         const data = await env.AFSPRAKEN_DB.get("appointments");
@@ -23,8 +23,11 @@ export default {
           headers: { "Content-Type": "application/json" }
         });
       }
+
+      return new Response("Method not allowed", { status: 405 });
     }
 
-    return new Response("Not found", { status: 404 });
+    // Alles wat geen API is, gewoon normaal doorlaten
+    return env.ASSETS.fetch(request);
   }
 };
