@@ -1,6 +1,5 @@
-const CACHE_NAME = 'zorgplanner-pwa-v30';
+const CACHE_NAME = 'zorgplanner-pwa-v32-appinstall';
 
-// Absolute paths — werkt op zowel Netlify als Cloudflare Pages
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -18,7 +17,7 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(APP_SHELL))
       .then(() => self.skipWaiting())
-      .catch(() => self.skipWaiting()) // nooit vastlopen bij cache-fout
+      .catch(() => self.skipWaiting())
   );
 });
 
@@ -37,19 +36,18 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-
-  // Laat externe verzoeken (bijv. analytics) passeren
   if (url.origin !== self.location.origin) return;
 
-  // sw.js zelf nooit cachen — altijd netwerk
-  if (url.pathname === '/sw.js') return;
+  if (url.pathname === '/sw.js') {
+    event.respondWith(fetch(req));
+    return;
+  }
 
-  // Navigate requests: netwerk-first, fallback naar cache
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)
         .then(resp => {
-          if (resp.ok) {
+          if (resp && resp.ok) {
             const copy = resp.clone();
             caches.open(CACHE_NAME)
               .then(cache => cache.put('/index.html', copy))
@@ -62,24 +60,27 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Overige assets: cache-first, update op achtergrond
   event.respondWith(
     caches.match(req).then(cached => {
-      const fetchPromise = fetch(req).then(resp => {
-        if (resp.ok) {
-          const copy = resp.clone();
-          caches.open(CACHE_NAME)
-            .then(cache => cache.put(req, copy))
-            .catch(() => {});
-        }
-        return resp;
-      }).catch(() => null);
+      const networkFetch = fetch(req)
+        .then(resp => {
+          if (resp && resp.ok) {
+            const copy = resp.clone();
+            caches.open(CACHE_NAME)
+              .then(cache => cache.put(req, copy))
+              .catch(() => {});
+          }
+          return resp;
+        })
+        .catch(() => null);
 
-      return cached || fetchPromise;
+      return cached || networkFetch;
     })
   );
 });
 
 self.addEventListener('message', event => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
