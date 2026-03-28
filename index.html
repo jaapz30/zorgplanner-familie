@@ -101,8 +101,8 @@
         </div>
         <div>
           <label for="apptTime">🕐 Tijd</label>
-          <input id="apptTime" list="timeSuggestions" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="5" placeholder="09:00" required aria-describedby="apptTimeHelp apptTimeError" pattern="^([0-2][0-9]:[0-5][0-9]|\d{3,4})$">
-          <p id="apptTimeHelp" class="helper">Gebruik 09:00 of 0900. Geldig: 00:00–23:59.</p>
+          <input id="apptTime" list="timeSuggestions" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="10" placeholder="Bijv. 9, 09:00, 930 of 9u30" required aria-describedby="apptTimeHelp apptTimeError">
+          <p id="apptTimeHelp" class="helper">Je mag bijvoorbeeld invoeren: 9, 09, 9:30, 930, 09.30 of 9u30. De app maakt er automatisch 09:00 of 09:30 van.</p>
           <p id="apptTimeError" class="fieldMessage errorText" aria-live="polite"></p>
         </div>
       </div>
@@ -121,7 +121,7 @@
       <div id="descriptionQuickPicks" class="quickPicks"></div>
 
       <div class="formBlock driverBlock">
-        <label for="apptDriver">🚗 Chauffeur <span class="optional">(optioneel — laat open als nog onbekend)</span></label>
+        <label for="apptDriver">🚗 Chauffeur <span class="required">(nodig voor "Compleet")</span></label>
         <div class="inputWithBtn">
           <input id="apptDriver" list="nameSuggestions" type="text" maxlength="80" minlength="2" autocomplete="on" placeholder="Naam typen of kiezen" aria-describedby="apptDriverError">
           <button type="button" id="useMeAsDriver" class="meBtn">Ik rijd</button>
@@ -132,7 +132,7 @@
       <div class="formBlock">
         <label for="apptPassengers">👥 Mee naar afspraak <span class="optional">(optioneel)</span></label>
         <div class="inputWithBtn">
-          <input id="apptPassengers" list="nameSuggestions" type="text" maxlength="80" minlength="2" autocomplete="on" placeholder="Naam typen" aria-describedby="apptPassengersError">
+          <input id="apptPassengers" list="nameSuggestions" type="text" maxlength="80" minlength="2" autocomplete="on" placeholder="Naam typen, ook meerdere namen met komma" aria-describedby="apptPassengersError">
           <button type="button" id="addPassengerBtn" class="addBtn">+ Voeg toe</button>
         </div>
         <p id="apptPassengersError" class="fieldMessage errorText" aria-live="polite"></p>
@@ -141,7 +141,7 @@
       </div>
 
       <div class="formBlock careBlock">
-        <label for="apptCareOption">🧸 Oppas / opvang <span class="optional">(optioneel — laat open als nog onbekend)</span></label>
+        <label for="apptCareOption">🧸 Oppas / opvang <span class="required">(nodig voor "Compleet")</span></label>
         <div class="inputWithBtn">
           <input id="apptCareOption" list="careSuggestions" type="text" maxlength="80" minlength="2" autocomplete="on" placeholder="Bijv. opvang, buurvrouw, thuiszorg" aria-describedby="apptCareError">
           <button type="button" id="addCareBtn" class="addBtn">+ Voeg toe</button>
@@ -243,25 +243,6 @@
   <datalist id="locationSuggestions"></datalist>
   <datalist id="departmentSuggestions"></datalist>
   <datalist id="descriptionSuggestions"></datalist>
-
-  <!-- Familie koppeling dialog -->
-  <dialog id="familyDialog" class="modal">
-    <div class="modalCard narrow">
-      <div class="modalHeader">
-        <h2>👨‍👩‍👧‍👦 Familie verbinden</h2>
-        <button id="closeFamilyBtn" class="iconBtn" aria-label="Sluiten">✕</button>
-      </div>
-      <p class="muted">Voer de familiecode in om afspraken te delen en samen te werken. Iedereen met dezelfde code ziet dezelfde afspraken.</p>
-      <label for="familyCodeInput">Familiecode</label>
-      <input id="familyCodeInput" type="text" maxlength="40" placeholder="Bijv. Liesbeth" autocomplete="off" autocapitalize="off">
-      <p id="familyCodeError" class="fieldMessage errorText" aria-live="polite"></p>
-      <div class="btnRow">
-        <button id="joinFamilyBtn" class="primary">Verbinden</button>
-        <button id="closeFamilyBtn2" class="ghost" onclick="document.getElementById('familyDialog').close()">Annuleren</button>
-      </div>
-      <p class="helper" style="margin-top:16px">De code is hoofdletterongevoelig. Vraag de code op bij de beheerder van de Zorgplanner.</p>
-    </div>
-  </dialog>
 
   <div id="appToast" class="appToast hidden" role="status" aria-live="polite">
     <div id="toastMessage" class="toastMessage"></div>
