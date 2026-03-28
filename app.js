@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '32';
+const APP_VERSION = '32.1';
 const SCHEMA_VERSION = 32;
 const STORAGE_KEY = 'zorgplanner_v22_data';
 const LEGACY_STORAGE_KEYS = [
@@ -195,31 +195,36 @@ function attachEvents() {
 
   els.useMeAsPassenger.addEventListener('click', () => {
     if (!state.currentUser) return openNameDialog();
-    addTempPassenger(state.currentUser);
+    addValueToInputList(els.apptPassengers, state.currentUser);
+    syncTempPassengersFromInput();
   });
 
   els.useMeAsCare.addEventListener('click', () => {
     if (!state.currentUser) return openNameDialog();
-    addTempCare(state.currentUser);
+    addValueToInputList(els.apptCareOption, state.currentUser);
+    syncTempCareFromInput();
   });
 
   els.addPassengerBtn.addEventListener('click', () => {
-    addTempPassenger(els.apptPassengers.value);
-    els.apptPassengers.value = '';
+    const value = cleanText(els.apptPassengers.value);
+    if (!value) return;
+    syncTempPassengersFromInput();
     els.apptPassengers.focus();
+  });
+
+  els.apptPassengers.addEventListener('input', () => {
+    syncTempPassengersFromInput(false);
   });
 
   els.apptPassengers.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      els.addPassengerBtn.click();
+      syncTempPassengersFromInput();
     }
   });
 
   els.apptPassengers.addEventListener('blur', () => {
-    const value = cleanText(els.apptPassengers.value);
-    if (!value) return;
-    setTimeout(() => { commitPendingPassengers(); }, 120);
+    syncTempPassengersFromInput();
   });
 
   els.apptTime.addEventListener('blur', () => {
@@ -233,22 +238,25 @@ function attachEvents() {
   });
 
   els.addCareBtn.addEventListener('click', () => {
-    addTempCare(els.apptCareOption.value);
-    els.apptCareOption.value = '';
+    const value = cleanText(els.apptCareOption.value);
+    if (!value) return;
+    syncTempCareFromInput();
     els.apptCareOption.focus();
+  });
+
+  els.apptCareOption.addEventListener('input', () => {
+    syncTempCareFromInput(false);
   });
 
   els.apptCareOption.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      els.addCareBtn.click();
+      syncTempCareFromInput();
     }
   });
 
   els.apptCareOption.addEventListener('blur', () => {
-    const value = cleanText(els.apptCareOption.value);
-    if (!value) return;
-    setTimeout(() => { commitPendingCare(); }, 120);
+    syncTempCareFromInput();
   });
 
   setupFieldSuggestions();
@@ -312,6 +320,62 @@ function attachEvents() {
   els.exportBtn.addEventListener('click', exportData);
   els.importInput.addEventListener('change', importData);
   els.toastCloseBtn?.addEventListener('click', hideToast);
+}
+
+function parseTextList(value) {
+  return uniqueStrings(
+    String(value || '')
+      .split(/[;,\n]+/)
+      .map(part => cleanText(part))
+      .filter(Boolean)
+  );
+}
+
+function writeTextListToInput(input, list) {
+  if (!input) return;
+  input.value = (list || []).join(', ');
+}
+
+function addValueToInputList(input, value) {
+  const current = parseTextList(input?.value || '');
+  const next = uniqueStrings([...current, cleanText(value)]);
+  writeTextListToInput(input, next);
+}
+
+function syncTempPassengersFromInput(showErrors = true) {
+  const values = parseTextList(els.apptPassengers.value);
+  const errors = values
+    .map(v => validateOptionalPersonName(v, 'Naam bij mee naar afspraak'))
+    .filter(Boolean);
+
+  if (errors.length) {
+    if (showErrors) setFieldError(els.apptPassengers, errors[0], els.passengerError);
+    return;
+  }
+
+  clearFieldError(els.apptPassengers);
+  tempPassengers = values;
+  values.forEach(rememberName);
+  renderTempChips();
+  renderSuggestions();
+}
+
+function syncTempCareFromInput(showErrors = true) {
+  const values = parseTextList(els.apptCareOption.value);
+  const errors = values
+    .map(v => validateOptionalPersonName(v, 'Oppas / opvang'))
+    .filter(Boolean);
+
+  if (errors.length) {
+    if (showErrors) setFieldError(els.apptCareOption, errors[0], els.careError);
+    return;
+  }
+
+  clearFieldError(els.apptCareOption);
+  tempCare = values;
+  values.forEach(rememberCareOption);
+  renderTempChips();
+  renderSuggestions();
 }
 
 function setView(viewId) {
@@ -729,6 +793,8 @@ function openAppointmentDialog(id = null) {
     els.apptNote.value = a.note || '';
     tempPassengers = [...(a.passengers || [])];
     tempCare = [...(a.care || [])];
+    writeTextListToInput(els.apptPassengers, tempPassengers);
+    writeTextListToInput(els.apptCareOption, tempCare);
     els.deleteAppointmentBtn.classList.remove('hidden');
   } else {
     els.appointmentTitle.textContent = 'Nieuwe afspraak';
@@ -739,11 +805,13 @@ function openAppointmentDialog(id = null) {
     els.apptDescription.value = '';
     els.apptDriver.value = '';
     els.apptNote.value = '';
+    tempPassengers = [];
+    tempCare = [];
+    writeTextListToInput(els.apptPassengers, []);
+    writeTextListToInput(els.apptCareOption, []);
     els.deleteAppointmentBtn.classList.add('hidden');
   }
 
-  els.apptPassengers.value = '';
-  els.apptCareOption.value = '';
   clearAppointmentErrors();
   renderTempChips();
   renderQuickPicks();
@@ -761,10 +829,8 @@ function saveAppointment() {
   const rawTime = cleanText(els.apptTime.value);
   const timeResult = parseAndNormalizeTime(rawTime);
   const driver = cleanText(els.apptDriver.value);
-  const pendingPassengerValues = splitManualEntryValues(els.apptPassengers.value);
-  const pendingCareValues = splitManualEntryValues(els.apptCareOption.value);
-  const passengers = uniqueStrings([...tempPassengers, ...pendingPassengerValues]);
-  const care = uniqueStrings([...tempCare, ...pendingCareValues]);
+  const passengers = parseTextList(els.apptPassengers.value);
+  const care = parseTextList(els.apptCareOption.value);
 
   const errors = [];
   clearInlineAppointmentErrors();
@@ -810,6 +876,8 @@ function saveAppointment() {
 
   const time = timeResult.value;
   els.apptTime.value = time;
+  tempPassengers = passengers;
+  tempCare = care;
 
   const appointment = {
     id: editingId || generateId(),
@@ -859,79 +927,18 @@ function deleteAppointment() {
   closeAppointmentDialog();
 }
 
-function splitManualEntryValues(value) {
-  return uniqueStrings(
-    String(value || '')
-      .split(/[;,\n]+/)
-      .map(part => cleanText(part))
-      .filter(Boolean)
-  );
-}
-
-function commitPendingPassengers() {
-  const values = splitManualEntryValues(els.apptPassengers.value);
-  if (!values.length) return;
-  let hasError = false;
-
-  values.forEach(value => {
-    const before = tempPassengers.length;
-    addTempPassenger(value);
-    if (tempPassengers.length === before && validatePersonName(value, 'Naam bij mee naar afspraak')) {
-      hasError = true;
-    }
-  });
-
-  if (!hasError) {
-    els.apptPassengers.value = '';
-  }
-}
-
-function commitPendingCare() {
-  const values = splitManualEntryValues(els.apptCareOption.value);
-  if (!values.length) return;
-  let hasError = false;
-
-  values.forEach(value => {
-    const before = tempCare.length;
-    addTempCare(value);
-    if (tempCare.length === before && validatePersonName(value, 'Oppas / opvang')) {
-      hasError = true;
-    }
-  });
-
-  if (!hasError) {
-    els.apptCareOption.value = '';
-  }
-}
-
 function addTempPassenger(value) {
   const clean = cleanText(value);
   if (!clean) return;
-  const error = validatePersonName(clean, 'Naam bij mee naar afspraak');
-  if (error) {
-    setFieldError(els.apptPassengers, error, els.passengerError);
-    return;
-  }
-  clearFieldError(els.apptPassengers);
-  tempPassengers = uniqueStrings([...tempPassengers, clean]);
-  rememberName(clean);
-  renderTempChips();
-  renderSuggestions();
+  addValueToInputList(els.apptPassengers, clean);
+  syncTempPassengersFromInput();
 }
 
 function addTempCare(value) {
   const clean = cleanText(value);
   if (!clean) return;
-  const error = validatePersonName(clean, 'Oppas / opvang');
-  if (error) {
-    setFieldError(els.apptCareOption, error, els.careError);
-    return;
-  }
-  clearFieldError(els.apptCareOption);
-  tempCare = uniqueStrings([...tempCare, clean]);
-  rememberCareOption(clean);
-  renderTempChips();
-  renderSuggestions();
+  addValueToInputList(els.apptCareOption, clean);
+  syncTempCareFromInput();
 }
 
 function renderTempChips() {
@@ -941,6 +948,7 @@ function renderTempChips() {
   els.passengerChips.querySelectorAll('[data-remove-passenger]').forEach(btn => {
     btn.addEventListener('click', () => {
       tempPassengers = tempPassengers.filter(v => v !== btn.dataset.removePassenger);
+      writeTextListToInput(els.apptPassengers, tempPassengers);
       renderTempChips();
     });
   });
@@ -948,6 +956,7 @@ function renderTempChips() {
   els.careChips.querySelectorAll('[data-remove-care-temp]').forEach(btn => {
     btn.addEventListener('click', () => {
       tempCare = tempCare.filter(v => v !== btn.dataset.removeCareTemp);
+      writeTextListToInput(els.apptCareOption, tempCare);
       renderTempChips();
     });
   });
