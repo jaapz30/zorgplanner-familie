@@ -20,9 +20,14 @@
         <img src="/icons/icon.svg" class="appLogo" alt="" aria-hidden="true">
         <h1>Zorgplanner</h1>
       </div>
-      <button id="userButton" class="userBtn" aria-label="Jouw naam instellen">
-        <span id="userButtonLabel">Jouw naam</span>
-      </button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button id="helpBtn" class="userBtn" type="button" aria-label="Handleiding openen">
+          <span>Help</span>
+        </button>
+        <button id="userButton" class="userBtn" aria-label="Jouw naam instellen">
+          <span id="userButtonLabel">Jouw naam</span>
+        </button>
+      </div>
     </header>
 
     <main id="mainContent">
@@ -232,6 +237,137 @@
     </div>
   </dialog>
 
+  <!-- Help dialog -->
+  <dialog id="helpDialog" class="modal">
+    <div class="modalCard wide">
+      <div class="modalHeader">
+        <h2>📅 Zorgplanner – uitleg</h2>
+        <button id="closeHelpBtn" class="iconBtn" aria-label="Sluiten">✕</button>
+      </div>
+
+      <div class="muted" style="color: var(--text); line-height: 1.65;">
+        <h3 style="margin-bottom:12px;">Waarom deze app?</h3>
+        <p style="margin-bottom:16px;">
+          Zorgplanner is gemaakt om <strong>ziekenhuisafspraken overzichtelijk te regelen</strong>.
+        </p>
+        <p style="margin-bottom:12px;">Bij een afspraak komt vaak meer kijken dan alleen de datum:</p>
+        <ul style="margin:0 0 18px 20px; padding:0;">
+          <li>Wie rijdt er?</li>
+          <li>Wie gaat mee?</li>
+          <li>Is er oppas of opvang nodig?</li>
+        </ul>
+        <p style="margin-bottom:18px;">
+          Deze app zorgt ervoor dat <strong>alles rondom de afspraak duidelijk is geregeld</strong>.<br>
+          Geen losse appjes meer, geen verwarring, alles op één plek.
+        </p>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:18px 0;">
+
+        <h3 style="margin-bottom:12px;">Wat doet de app precies?</h3>
+        <ul style="margin:0 0 18px 20px; padding:0;">
+          <li>Je ziet alle afspraken overzichtelijk</li>
+          <li>Je regelt vervoer en opvang</li>
+          <li>Je weet wie welke rol heeft</li>
+          <li>Je ziet direct wat nog niet geregeld is</li>
+        </ul>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:18px 0;">
+
+        <h3 style="margin-bottom:12px;">Hoe werkt het?</h3>
+        <p style="margin-bottom:10px;"><strong>1. Vul je naam in</strong><br>
+        Bij de eerste keer openen vul je jouw naam in. Daarna kun je jezelf makkelijk kiezen bij afspraken.</p>
+
+        <p style="margin-bottom:10px;"><strong>2. Nieuwe afspraak toevoegen</strong><br>
+        Klik op <strong>+ Nieuwe afspraak</strong>.</p>
+
+        <p style="margin-bottom:10px;">Vul de afspraak in:</p>
+        <ul style="margin:0 0 18px 20px; padding:0;">
+          <li>Datum en tijd</li>
+          <li>Ziekenhuis / locatie</li>
+          <li>Chauffeur</li>
+          <li>Oppas / opvang</li>
+          <li>Wie gaat mee</li>
+        </ul>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:18px 0;">
+
+        <h3 style="margin-bottom:12px;">Rollen bij een afspraak</h3>
+
+        <p style="margin-bottom:10px;"><strong>Chauffeur (vervoer)</strong><br>
+        Wie rijdt naar het ziekenhuis. Je kunt ook invullen dat iemand <strong>zelf rijdt</strong>.</p>
+        <p style="margin-bottom:14px;"><strong>Vervoer is nodig om de afspraak als geregeld te zien.</strong></p>
+
+        <p style="margin-bottom:10px;"><strong>Oppas / opvang</strong><br>
+        Wie zorgt voor kinderen of andere taken. Je kunt ook invullen dat <strong>geen opvang nodig is</strong>.</p>
+        <p style="margin-bottom:14px;"><strong>Oppas/opvang is ook nodig om de afspraak als geregeld te zien.</strong></p>
+
+        <p style="margin-bottom:16px;"><strong>Mee naar afspraak</strong><br>
+        Dit is extra informatie. Hiermee kun je aangeven wie meegaat of dat iemand alleen naar het ziekenhuis gaat.</p>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:18px 0;">
+
+        <h3 style="margin-bottom:12px;">Wanneer is een afspraak geregeld?</h3>
+        <ul style="margin:0 0 18px 20px; padding:0;">
+          <li><strong>Groen</strong> = chauffeur én opvang zijn ingevuld</li>
+          <li><strong>Oranje</strong> = één van de twee ontbreekt</li>
+          <li><strong>Rood</strong> = er moet nog iets geregeld worden</li>
+        </ul>
+        <p style="margin-bottom:18px;">Zo zie je meteen wat nog gedaan moet worden.</p>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:18px 0;">
+
+        <h3 style="margin-bottom:12px;">Overzicht in de app</h3>
+        <ul style="margin:0 0 18px 20px; padding:0;">
+          <li><strong>Home</strong> = eerstvolgende afspraak + wat nog open staat</li>
+          <li><strong>Dag</strong> = afspraken van vandaag</li>
+          <li><strong>Week / Maand</strong> = volledig overzicht</li>
+          <li><strong>Open</strong> = alleen wat nog geregeld moet worden</li>
+          <li><strong>Beheer</strong> = namen en instellingen</li>
+        </ul>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:18px 0;">
+
+        <h3 style="margin-bottom:12px;">Installeren als app</h3>
+        <p style="margin-bottom:12px;">
+          Je kunt Zorgplanner als app op je telefoon zetten. Dan staat hij op je beginscherm en is hij makkelijk te openen.
+        </p>
+
+        <p style="margin-bottom:10px;"><strong>iPhone (Safari)</strong></p>
+        <ol style="margin:0 0 16px 22px; padding:0;">
+          <li>Open de site in <strong>Safari</strong></li>
+          <li>Tik op het <strong>deel-icoon</strong></li>
+          <li>Kies <strong>Zet op beginscherm</strong></li>
+          <li>Tik op <strong>Voeg toe</strong></li>
+        </ol>
+
+        <p style="margin-bottom:10px;"><strong>Android (Chrome)</strong></p>
+        <ol style="margin:0 0 16px 22px; padding:0;">
+          <li>Open de site in <strong>Chrome</strong></li>
+          <li>Tik op de <strong>3 puntjes</strong> rechtsboven</li>
+          <li>Kies <strong>App installeren</strong></li>
+          <li>Bestaat <strong>App installeren</strong> niet? Kies dan <strong>Toevoegen aan startscherm</strong></li>
+        </ol>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:18px 0;">
+
+        <h3 style="margin-bottom:12px;">Belangrijk om te weten</h3>
+        <ul style="margin:0 0 18px 20px; padding:0;">
+          <li>Iedereen werkt in dezelfde planner</li>
+          <li>Wijzigingen zijn direct zichtbaar</li>
+          <li>Je hoeft niets te installeren via een app store</li>
+          <li>Er worden <strong>geen bestanden op je telefoon opgeslagen</strong></li>
+        </ul>
+
+        <p style="margin-bottom:12px;"><strong>Handige tip:</strong><br>
+        Vul altijd chauffeur en opvang in. Dan staat de afspraak meteen goed als geregeld in het overzicht.</p>
+
+        <p style="margin-top:18px;">
+          Zorgplanner helpt om afspraken rustig, duidelijk en samen te regelen.
+        </p>
+      </div>
+    </div>
+  </dialog>
+
   <datalist id="nameSuggestions"></datalist>
   <datalist id="careSuggestions"></datalist>
   <datalist id="timeSuggestions"></datalist>
@@ -248,5 +384,24 @@
   </div>
 
   <script src="/app.js"></script>
+  <script>
+    (function () {
+      var helpBtn = document.getElementById('helpBtn');
+      var helpDialog = document.getElementById('helpDialog');
+      var closeHelpBtn = document.getElementById('closeHelpBtn');
+
+      if (helpBtn && helpDialog) {
+        helpBtn.addEventListener('click', function () {
+          helpDialog.showModal();
+        });
+      }
+
+      if (closeHelpBtn && helpDialog) {
+        closeHelpBtn.addEventListener('click', function () {
+          helpDialog.close();
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
