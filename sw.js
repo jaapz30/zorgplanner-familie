@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zorgplanner-pwa-v34-appinstall';
+const CACHE_NAME = 'zorgplanner-pwa-v33-appinstall';
 
 const APP_SHELL = [
   '/',
@@ -39,13 +39,13 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
 
   if (url.pathname === '/sw.js') {
-    event.respondWith(fetch(req, { cache: 'no-store' }));
+    event.respondWith(fetch(req));
     return;
   }
 
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req, { cache: 'no-store' })
+      fetch(req)
         .then(resp => {
           if (resp && resp.ok) {
             const copy = resp.clone();
@@ -62,7 +62,7 @@ self.addEventListener('fetch', event => {
 
   event.respondWith(
     caches.match(req).then(cached => {
-      const networkFetch = fetch(req, { cache: 'no-store' })
+      const networkFetch = fetch(req)
         .then(resp => {
           if (resp && resp.ok) {
             const copy = resp.clone();
