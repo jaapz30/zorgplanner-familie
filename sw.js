@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zorgplanner-pwa-v32-appinstall';
+const CACHE_NAME = 'zorgplanner-pwa-v33-appinstall';
 
 const APP_SHELL = [
   '/',
