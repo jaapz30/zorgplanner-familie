@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '32.4';
+const APP_VERSION = '32.5';
 const SCHEMA_VERSION = 33;
 const STORAGE_KEY = 'zorgplanner_v22_data';
 const LEGACY_STORAGE_KEYS = [
@@ -38,6 +38,7 @@ let tempPassengers = [];
 let tempCare = [];
 let syncInProgress = false;
 let syncQueued = false;
+let actionInProgress = false;
 let lastSeenAt = loadLastSeenAt();
 
 const els = {
@@ -167,51 +168,73 @@ function attachEvents() {
         e.preventDefault();
         e.stopPropagation();
       }
+      if (actionInProgress) return;
       setView(btn.dataset.view);
     };
     btn.addEventListener('click', go);
     btn.addEventListener('touchend', go, { passive: false });
   });
 
-  els.quickAddBtn.addEventListener('click', () => openAppointmentDialog());
+  els.quickAddBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
+    openAppointmentDialog();
+  });
   els.quickAddBtn.addEventListener('touchend', (e) => {
     e.preventDefault();
+    if (actionInProgress) return;
     openAppointmentDialog();
   }, { passive: false });
 
-  els.userButton.addEventListener('click', openNameDialog);
+  els.userButton.addEventListener('click', () => {
+    if (actionInProgress) return;
+    openNameDialog();
+  });
 
   els.saveUserNameBtn.addEventListener('click', saveUserName);
-  els.cancelNameBtn.addEventListener('click', () => els.nameDialog.close());
+  els.cancelNameBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
+    els.nameDialog.close();
+  });
   els.currentUserName.addEventListener('keydown', e => {
     if (e.key === 'Enter') saveUserName();
   });
 
-  els.closeAppointmentBtn.addEventListener('click', closeAppointmentDialog);
-  els.cancelAppointmentBtn.addEventListener('click', closeAppointmentDialog);
+  els.closeAppointmentBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
+    closeAppointmentDialog();
+  });
+  els.cancelAppointmentBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
+    closeAppointmentDialog();
+  });
   els.saveAppointmentBtn.addEventListener('click', saveAppointment);
   els.deleteAppointmentBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
     if (editingId) els.confirmDialog.showModal();
   });
 
   els.useMeAsDriver.addEventListener('click', () => {
+    if (actionInProgress) return;
     if (!state.currentUser) return openNameDialog();
     els.apptDriver.value = state.currentUser;
   });
 
   els.useMeAsPassenger.addEventListener('click', () => {
+    if (actionInProgress) return;
     if (!state.currentUser) return openNameDialog();
     addValueToInputList(els.apptPassengers, state.currentUser);
     syncTempPassengersFromInput();
   });
 
   els.useMeAsCare.addEventListener('click', () => {
+    if (actionInProgress) return;
     if (!state.currentUser) return openNameDialog();
     addValueToInputList(els.apptCareOption, state.currentUser);
     syncTempCareFromInput();
   });
 
   els.addPassengerBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
     const value = cleanText(els.apptPassengers.value);
     if (!value) return;
     syncTempPassengersFromInput();
@@ -244,6 +267,7 @@ function attachEvents() {
   });
 
   els.addCareBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
     const value = cleanText(els.apptCareOption.value);
     if (!value) return;
     syncTempCareFromInput();
@@ -268,11 +292,18 @@ function attachEvents() {
   setupFieldSuggestions();
 
   els.confirmDeleteBtn.addEventListener('click', deleteAppointment);
-  els.confirmCancelBtn.addEventListener('click', () => els.confirmDialog.close());
+  els.confirmCancelBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
+    els.confirmDialog.close();
+  });
 
-  els.closeManageBtn.addEventListener('click', () => els.manageDialog.close());
+  els.closeManageBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
+    els.manageDialog.close();
+  });
 
   els.addManageNameBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
     const value = cleanText(els.manageNameInput.value);
     const error = validatePersonName(value, 'Naam');
     if (error) {
@@ -285,7 +316,7 @@ function attachEvents() {
     els.manageNameInput.classList.remove('fieldError');
     rememberName(value);
     els.manageNameInput.value = '';
-    persistAndRefresh();
+    persistAndRefreshBackground();
     renderManageDialog();
     showToast('Naam toegevoegd.');
   });
@@ -295,11 +326,12 @@ function attachEvents() {
   });
 
   els.addManageCareBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
     const value = cleanText(els.manageCareInput.value);
     if (!value) return;
     rememberCareOption(value);
     els.manageCareInput.value = '';
-    persistAndRefresh();
+    persistAndRefreshBackground();
     renderManageDialog();
     showToast('Oppas- of opvangoptie toegevoegd.');
   });
@@ -310,6 +342,7 @@ function attachEvents() {
 
   els.copyShareCodeBtn.addEventListener('click', copyShareCode);
   els.pasteShareCodeBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
     els.shareCodeArea.classList.toggle('hidden');
     if (!els.shareCodeArea.classList.contains('hidden')) {
       els.shareCodeInput.value = '';
@@ -319,6 +352,7 @@ function attachEvents() {
 
   els.importShareCodeBtn.addEventListener('click', () => importShareCode(els.shareCodeInput.value));
   els.cancelShareCodeBtn.addEventListener('click', () => {
+    if (actionInProgress) return;
     els.shareCodeArea.classList.add('hidden');
     els.shareCodeInput.value = '';
   });
@@ -326,6 +360,45 @@ function attachEvents() {
   els.exportBtn.addEventListener('click', exportData);
   els.importInput.addEventListener('change', importData);
   els.toastCloseBtn?.addEventListener('click', hideToast);
+}
+
+function setActionInProgress(isBusy) {
+  actionInProgress = Boolean(isBusy);
+
+  const controls = [
+    els.quickAddBtn,
+    els.userButton,
+    els.saveUserNameBtn,
+    els.cancelNameBtn,
+    els.closeAppointmentBtn,
+    els.saveAppointmentBtn,
+    els.deleteAppointmentBtn,
+    els.cancelAppointmentBtn,
+    els.confirmCancelBtn,
+    els.confirmDeleteBtn,
+    els.closeManageBtn,
+    els.addManageNameBtn,
+    els.addManageCareBtn,
+    els.copyShareCodeBtn,
+    els.pasteShareCodeBtn,
+    els.importShareCodeBtn,
+    els.cancelShareCodeBtn,
+    els.exportBtn,
+    els.toastActionBtn,
+    els.toastCloseBtn,
+    els.useMeAsDriver,
+    els.addPassengerBtn,
+    els.useMeAsPassenger,
+    els.addCareBtn,
+    els.useMeAsCare
+  ];
+
+  controls.forEach(el => {
+    if (!el) return;
+    el.disabled = actionInProgress;
+  });
+
+  document.body.style.cursor = actionInProgress ? 'progress' : '';
 }
 
 function parseTextList(value) {
@@ -493,11 +566,13 @@ function renderDay() {
   els.dayView.innerHTML = html;
 
   document.getElementById('prevDayBtn')?.addEventListener('click', () => {
+    if (actionInProgress) return;
     selectedDate = addDays(selectedDate, -1);
     renderDay();
   });
 
   document.getElementById('nextDayBtn')?.addEventListener('click', () => {
+    if (actionInProgress) return;
     selectedDate = addDays(selectedDate, 1);
     renderDay();
   });
@@ -553,11 +628,13 @@ function renderWeek() {
   els.weekView.innerHTML = html;
 
   document.getElementById('prevWeekBtn')?.addEventListener('click', () => {
+    if (actionInProgress) return;
     selectedDate = addDays(monday, -7);
     renderWeek();
   });
 
   document.getElementById('nextWeekBtn')?.addEventListener('click', () => {
+    if (actionInProgress) return;
     selectedDate = addDays(monday, 7);
     renderWeek();
   });
@@ -642,6 +719,7 @@ function renderMonth() {
   els.monthView.innerHTML = html;
 
   document.getElementById('prevMonthBtn')?.addEventListener('click', () => {
+    if (actionInProgress) return;
     selectedMonthDate = addMonths(first, -1);
     if (!selectedDate.startsWith(selectedMonthDate.slice(0, 7))) {
       selectedDate = selectedMonthDate;
@@ -650,6 +728,7 @@ function renderMonth() {
   });
 
   document.getElementById('nextMonthBtn')?.addEventListener('click', () => {
+    if (actionInProgress) return;
     selectedMonthDate = addMonths(first, 1);
     if (!selectedDate.startsWith(selectedMonthDate.slice(0, 7))) {
       selectedDate = selectedMonthDate;
@@ -659,6 +738,7 @@ function renderMonth() {
 
   els.monthView.querySelectorAll('[data-goto-date]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (actionInProgress) return;
       selectedDate = btn.dataset.gotoDate;
       if (selectedDate.startsWith(monthLabel)) {
         selectedMonthDate = selectedDate;
@@ -669,6 +749,7 @@ function renderMonth() {
 
   els.monthView.querySelectorAll('[data-add-date]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (actionInProgress) return;
       selectedDate = btn.dataset.addDate;
       openAppointmentDialog();
     });
@@ -739,8 +820,12 @@ function renderSettings() {
       <p class="muted">Open de browser-opties en kies <strong>Installeren</strong> of <strong>Toevoegen aan beginscherm</strong> voor een ervaring op volledig scherm.</p>
     </section>`;
 
-  document.getElementById('editUserBtn')?.addEventListener('click', openNameDialog);
+  document.getElementById('editUserBtn')?.addEventListener('click', () => {
+    if (actionInProgress) return;
+    openNameDialog();
+  });
   document.getElementById('openManageBtn')?.addEventListener('click', () => {
+    if (actionInProgress) return;
     renderManageDialog();
     els.manageDialog.showModal();
   });
@@ -757,6 +842,7 @@ function renderManageDialog() {
 
   els.manageNamesList.querySelectorAll('[data-remove-name]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (actionInProgress) return;
       const val = btn.dataset.removeName;
       state.names = state.names.filter(n => n !== val);
       state.appointments.forEach(a => {
@@ -764,7 +850,7 @@ function renderManageDialog() {
         a.passengers = (a.passengers || []).filter(p => p !== val);
       });
       if (state.currentUser === val) state.currentUser = '';
-      persistAndRefresh();
+      persistAndRefreshBackground();
       renderManageDialog();
       if (!state.currentUser) openNameDialog();
       clearValidationState();
@@ -774,12 +860,13 @@ function renderManageDialog() {
 
   els.manageCareList.querySelectorAll('[data-remove-care]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (actionInProgress) return;
       const val = btn.dataset.removeCare;
       state.careOptions = state.careOptions.filter(n => n !== val);
       state.appointments.forEach(a => {
         a.care = (a.care || []).filter(c => c !== val);
       });
-      persistAndRefresh();
+      persistAndRefreshBackground();
       renderManageDialog();
     });
   });
@@ -833,7 +920,9 @@ function closeAppointmentDialog() {
   els.appointmentDialog.close();
 }
 
-function saveAppointment() {
+async function saveAppointment() {
+  if (actionInProgress) return;
+
   clearAppointmentErrors();
 
   const date = normalizeDateInput(els.apptDate.value);
@@ -917,6 +1006,8 @@ function saveAppointment() {
 
   state.deletedAppointmentIds = (state.deletedAppointmentIds || []).filter(id => id !== appointment.id);
 
+  const previousState = structuredCloneSafe(state);
+
   const idx = state.appointments.findIndex(a => a.id === appointment.id);
   if (idx >= 0) {
     state.appointments[idx] = appointment;
@@ -926,24 +1017,67 @@ function saveAppointment() {
 
   selectedDate = appointment.date;
   selectedMonthDate = appointment.date;
-  persistAndRefresh();
+
+  state = sanitizeState(state);
+  saveStateLocal(state);
+  refreshAll();
+
+  setActionInProgress(true);
+  setSaveMessage('Opslaan...', false);
+
+  const success = await syncStateToServerImmediate();
+
+  setActionInProgress(false);
+
+  if (!success) {
+    state = sanitizeState(previousState);
+    saveStateLocal(state);
+    refreshAll();
+    setSaveMessage('Opslaan mislukt. Probeer opnieuw.', true);
+    showToast('Opslaan mislukt. De afspraak is niet veilig opgeslagen.', true);
+    return;
+  }
+
   setSaveMessage('Afspraak opgeslagen.');
   showToast('Afspraak opgeslagen.');
   closeAppointmentDialog();
   setView('dayView');
 }
 
-function deleteAppointment() {
+async function deleteAppointment() {
+  if (actionInProgress) return;
+
   els.confirmDialog.close();
   if (!editingId) return;
 
   const deletedId = editingId;
+  const previousState = structuredCloneSafe(state);
+
   state.appointments = state.appointments.filter(a => a.id !== deletedId);
   state.deletedAppointmentIds = uniqueStrings([...(state.deletedAppointmentIds || []), deletedId]);
-  editingId = null;
+  state = sanitizeState(state);
+  saveStateLocal(state);
+  refreshAll();
 
-  persistAndRefresh();
+  setActionInProgress(true);
+  setSaveMessage('Verwijderen...', false);
+
+  const success = await syncStateToServerImmediate();
+
+  setActionInProgress(false);
+
+  if (!success) {
+    state = sanitizeState(previousState);
+    saveStateLocal(state);
+    refreshAll();
+    setSaveMessage('Verwijderen mislukt. Probeer opnieuw.', true);
+    showToast('Verwijderen mislukt. De afspraak is niet veilig verwijderd.', true);
+    return;
+  }
+
+  editingId = null;
   closeAppointmentDialog();
+  setSaveMessage('');
   showToast('Afspraak verwijderd.');
 }
 
@@ -967,6 +1101,7 @@ function renderTempChips() {
 
   els.passengerChips.querySelectorAll('[data-remove-passenger]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (actionInProgress) return;
       tempPassengers = tempPassengers.filter(v => v !== btn.dataset.removePassenger);
       writeTextListToInput(els.apptPassengers, tempPassengers);
       renderTempChips();
@@ -975,6 +1110,7 @@ function renderTempChips() {
 
   els.careChips.querySelectorAll('[data-remove-care-temp]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (actionInProgress) return;
       tempCare = tempCare.filter(v => v !== btn.dataset.removeCareTemp);
       writeTextListToInput(els.apptCareOption, tempCare);
       renderTempChips();
@@ -1032,6 +1168,7 @@ function renderContextSuggestions(container, values, query, onPick) {
   container.querySelectorAll('[data-quick-pick]').forEach(btn => {
     btn.addEventListener('mousedown', e => e.preventDefault());
     btn.addEventListener('click', () => {
+      if (actionInProgress) return;
       onPick(btn.dataset.quickPick || '');
       container.innerHTML = '';
     });
@@ -1040,11 +1177,17 @@ function renderContextSuggestions(container, values, query, onPick) {
 
 function bindDynamicActions(root) {
   root.querySelectorAll('[data-edit]').forEach(btn => {
-    btn.addEventListener('click', () => openAppointmentDialog(btn.dataset.edit));
+    btn.addEventListener('click', () => {
+      if (actionInProgress) return;
+      openAppointmentDialog(btn.dataset.edit);
+    });
   });
 
   root.querySelectorAll('[data-open-view]').forEach(btn => {
-    btn.addEventListener('click', () => setView(btn.dataset.openView));
+    btn.addEventListener('click', () => {
+      if (actionInProgress) return;
+      setView(btn.dataset.openView);
+    });
   });
 }
 
@@ -1157,6 +1300,8 @@ function markCurrentAppointmentsAsSeenSoon() {
 }
 
 function saveUserName() {
+  if (actionInProgress) return;
+
   const name = cleanText(els.currentUserName.value);
   const error = validatePersonName(name, 'Jouw naam');
   if (error) {
@@ -1166,7 +1311,7 @@ function saveUserName() {
   clearUserNameError();
   state.currentUser = name;
   rememberName(name);
-  persistAndRefresh();
+  persistAndRefreshBackground();
   els.nameDialog.close();
 }
 
@@ -1229,6 +1374,8 @@ function rememberTimeOption(value) {
 }
 
 function exportData() {
+  if (actionInProgress) return;
+
   const payload = {
     meta: {
       appVersion: APP_VERSION,
@@ -1250,6 +1397,8 @@ function exportData() {
 }
 
 function importData(event) {
+  if (actionInProgress) return;
+
   const file = event.target.files?.[0];
   if (!file) return;
   const reader = new FileReader();
@@ -1265,7 +1414,7 @@ function importData(event) {
     state = result.state;
     selectedDate = todayString();
     selectedMonthDate = todayString();
-    persistAndRefresh();
+    persistAndRefreshBackground();
     showToast(result.message || 'Back-up geïmporteerd.');
     event.target.value = '';
   };
@@ -1274,6 +1423,8 @@ function importData(event) {
 }
 
 async function copyShareCode() {
+  if (actionInProgress) return;
+
   try {
     const payload = {
       meta: {
@@ -1293,6 +1444,8 @@ async function copyShareCode() {
 }
 
 function importShareCode(code) {
+  if (actionInProgress) return;
+
   const clean = cleanText(code);
   if (!clean) {
     showToast('Plak eerst een deelcode.', true);
@@ -1316,7 +1469,7 @@ function importShareCode(code) {
   state = result.state;
   selectedDate = todayString();
   selectedMonthDate = todayString();
-  persistAndRefresh();
+  persistAndRefreshBackground();
   els.shareCodeArea.classList.add('hidden');
   els.shareCodeInput.value = '';
   showToast(result.message || 'Gegevens geïmporteerd.');
@@ -1457,7 +1610,7 @@ function validateOptionalPersonName(value, label) {
   return validatePersonName(clean, label);
 }
 
-function persistAndRefresh() {
+function persistAndRefreshBackground() {
   state = sanitizeState(state);
   saveStateLocal(state);
   refreshAll();
@@ -1509,6 +1662,51 @@ async function loadStateFromServer() {
   }
 }
 
+async function syncStateToServerImmediate() {
+  if (syncInProgress) {
+    syncQueued = true;
+    return false;
+  }
+
+  syncInProgress = true;
+  syncQueued = false;
+
+  try {
+    const payload = sanitizeState(state);
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': API_AUTH
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      throw new Error('Server save failed');
+    }
+
+    const response = await res.json().catch(() => null);
+    if (response && response.state) {
+      state = sanitizeState(response.state);
+      saveStateLocal(state);
+      refreshAll();
+    } else {
+      await syncFromServerAndRefresh();
+    }
+
+    return true;
+  } catch {
+    return false;
+  } finally {
+    syncInProgress = false;
+    if (syncQueued && !actionInProgress) {
+      syncQueued = false;
+      syncStateToServer();
+    }
+  }
+}
+
 async function syncStateToServer() {
   if (syncInProgress) {
     syncQueued = true;
@@ -1543,7 +1741,7 @@ async function syncStateToServer() {
     showToast('Opslaan online is mislukt. Alleen lokaal bewaard.', true);
   } finally {
     syncInProgress = false;
-    if (syncQueued) {
+    if (syncQueued && !actionInProgress) {
       syncQueued = false;
       syncStateToServer();
     }
