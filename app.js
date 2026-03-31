@@ -1,7 +1,7 @@
 'use strict';
 
-const APP_VERSION = '32.3';
-const SCHEMA_VERSION = 32;
+const APP_VERSION = '32.4';
+const SCHEMA_VERSION = 33;
 const STORAGE_KEY = 'zorgplanner_v22_data';
 const LEGACY_STORAGE_KEYS = [
   'zorgplanner_v21_data',
@@ -13,8 +13,6 @@ const LEGACY_STORAGE_KEYS = [
 const API_URL = '/api/appointments';
 const API_AUTH = 'liesbeth';
 const LAST_SEEN_KEY = 'zorgplanner_last_seen_at';
-const LOCAL_CURRENT_USER_KEY = 'zorgplanner_local_current_user_v1';
-const DISMISSED_NEW_IDS_KEY = 'zorgplanner_dismissed_new_ids_v1';
 
 const NAME_MIN = 2;
 const NAME_MAX = 80;
@@ -27,7 +25,8 @@ const EMPTY_STATE = {
   departments: [],
   descriptions: [],
   timeOptions: [],
-  appointments: []
+  appointments: [],
+  deletedAppointmentIds: []
 };
 
 let state = structuredCloneSafe(EMPTY_STATE);
@@ -38,8 +37,8 @@ let editingId = null;
 let tempPassengers = [];
 let tempCare = [];
 let syncInProgress = false;
+let syncQueued = false;
 let lastSeenAt = loadLastSeenAt();
-let dismissedNewIds = loadDismissedNewIds();
 
 const els = {
   views: document.querySelectorAll('.view'),
@@ -131,7 +130,6 @@ const els = {
 
 init().catch(() => {
   state = loadStateLocal();
-  applyLocalCurrentUserToState();
   refreshAll();
   if (!state.currentUser) openNameDialog();
 });
@@ -139,15 +137,12 @@ init().catch(() => {
 async function init() {
   attachEvents();
   ensureStateShape();
-  applyLocalCurrentUserToState();
   selectedDate = todayString();
   selectedMonthDate = todayString();
   clearValidationState();
   registerServiceWorker();
 
   await loadStateFromServer();
-  applyLocalCurrentUserToState();
-  dismissedNewIds = pruneDismissedNewIds(dismissedNewIds);
   refreshAll();
 
   if (!state.currentUser) openNameDialog();
@@ -399,8 +394,6 @@ function setView(viewId) {
 
 function refreshAll() {
   ensureStateShape();
-  applyLocalCurrentUserToState();
-  dismissedNewIds = pruneDismissedNewIds(dismissedNewIds);
   state.appointments = sortAppointments(state.appointments);
   renderSuggestions();
   renderQuickPicks();
@@ -434,33 +427,11 @@ function renderNavBadge() {
 function renderHome() {
   const upcoming = getUpcomingAppointment();
   const openItems = state.appointments.filter(a => appointmentStatus(a).key !== 'green').slice(0, 4);
-  const newAppointments = getNewAppointments();
-  const newCount = newAppointments.length;
+  const newCount = getNewAppointments().length;
   let html = '';
 
   if (newCount > 0) {
-    html += `
-      <section class="card" style="background: var(--warn-soft); border: 3px solid var(--warn);">
-        <h2 class="sectionTitle" style="margin-bottom:12px; color: var(--warn);">
-          ${newCount === 1 ? 'Nieuwe afspraak' : 'Nieuwe afspraken'}
-        </h2>
-        <div class="muted" style="margin-bottom: 14px; font-weight: 700; color: var(--text);">
-          ${newCount === 1 ? 'Er is 1 nieuwe afspraak toegevoegd. Deze melding blijft staan tot jij hem zelf sluit.' : `Er zijn ${newCount} nieuwe afspraken toegevoegd. Deze meldingen blijven staan tot jij ze zelf sluit.`}
-        </div>
-        ${newAppointments.map(a => `
-          <div style="background:#fff; border-radius:16px; padding:14px; margin-top:12px; border:2px solid #e6c36b;">
-            <div style="font-weight:900; font-size:1.02rem; margin-bottom:6px;">
-              ${escapeHtml(formatDateDutch(a.date))} • ${escapeHtml(a.time)}
-            </div>
-            <div style="margin-bottom:4px;"><strong>Locatie:</strong> ${escapeHtml(a.location || 'Locatie onbekend')}</div>
-            ${a.description ? `<div style="margin-bottom:10px;"><strong>Omschrijving:</strong> ${escapeHtml(a.description)}</div>` : ''}
-            <div class="btnRow" style="margin-top:10px;">
-              <button class="ghost small" data-edit="${a.id}">Openen</button>
-              <button class="primary small" data-dismiss-new="${a.id}">Melding sluiten</button>
-            </div>
-          </div>
-        `).join('')}
-      </section>`;
+    html += `<section class="card"><div class="openTaskInfo"><strong>${newCount === 1 ? 'Er is 1 nieuwe afspraak toegevoegd.' : `Er zijn ${newCount} nieuwe afspraken toegevoegd.`}</strong></div></section>`;
   }
 
   html += '<section class="card">';
@@ -792,10 +763,7 @@ function renderManageDialog() {
         if (a.driver === val) a.driver = '';
         a.passengers = (a.passengers || []).filter(p => p !== val);
       });
-      if (state.currentUser === val) {
-        state.currentUser = '';
-        saveLocalCurrentUser('');
-      }
+      if (state.currentUser === val) state.currentUser = '';
       persistAndRefresh();
       renderManageDialog();
       if (!state.currentUser) openNameDialog();
@@ -922,7 +890,7 @@ function saveAppointment() {
   tempPassengers = passengers;
   tempCare = care;
 
-  const existingAppointment = editingId ? state.appointments.find(a => a.id === editingId) : null;
+  const existing = editingId ? state.appointments.find(a => a.id === editingId) : null;
 
   const appointment = {
     id: editingId || generateId(),
@@ -935,7 +903,7 @@ function saveAppointment() {
     passengers,
     care,
     note: cleanText(els.apptNote.value),
-    createdAt: existingAppointment?.createdAt || new Date().toISOString(),
+    createdAt: existing?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
 
@@ -946,6 +914,8 @@ function saveAppointment() {
   rememberDepartment(appointment.department);
   rememberDescription(appointment.description);
   rememberTimeOption(appointment.time);
+
+  state.deletedAppointmentIds = (state.deletedAppointmentIds || []).filter(id => id !== appointment.id);
 
   const idx = state.appointments.findIndex(a => a.id === appointment.id);
   if (idx >= 0) {
@@ -966,12 +936,15 @@ function saveAppointment() {
 function deleteAppointment() {
   els.confirmDialog.close();
   if (!editingId) return;
-  state.appointments = state.appointments.filter(a => a.id !== editingId);
-  dismissedNewIds = dismissedNewIds.filter(id => id !== editingId);
-  saveDismissedNewIds(dismissedNewIds);
+
+  const deletedId = editingId;
+  state.appointments = state.appointments.filter(a => a.id !== deletedId);
+  state.deletedAppointmentIds = uniqueStrings([...(state.deletedAppointmentIds || []), deletedId]);
   editingId = null;
+
   persistAndRefresh();
   closeAppointmentDialog();
+  showToast('Afspraak verwijderd.');
 }
 
 function addTempPassenger(value) {
@@ -1073,10 +1046,6 @@ function bindDynamicActions(root) {
   root.querySelectorAll('[data-open-view]').forEach(btn => {
     btn.addEventListener('click', () => setView(btn.dataset.openView));
   });
-
-  root.querySelectorAll('[data-dismiss-new]').forEach(btn => {
-    btn.addEventListener('click', () => dismissNewAppointment(btn.dataset.dismissNew));
-  });
 }
 
 function cardHtml(a, options = {}) {
@@ -1166,79 +1135,9 @@ function saveLastSeenAt(value) {
   }
 }
 
-function loadLocalCurrentUser() {
-  try {
-    const direct = localStorage.getItem(LOCAL_CURRENT_USER_KEY);
-    if (direct) return cleanText(direct);
-
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const fallback = cleanText(parsed?.currentUser || parsed?.data?.currentUser || '');
-      if (fallback) {
-        localStorage.setItem(LOCAL_CURRENT_USER_KEY, fallback);
-        return fallback;
-      }
-    }
-  } catch {
-    // stil falen
-  }
-  return '';
-}
-
-function saveLocalCurrentUser(value) {
-  try {
-    const clean = cleanText(value);
-    if (clean) localStorage.setItem(LOCAL_CURRENT_USER_KEY, clean);
-    else localStorage.removeItem(LOCAL_CURRENT_USER_KEY);
-  } catch {
-    // stil falen
-  }
-}
-
-function applyLocalCurrentUserToState() {
-  state.currentUser = loadLocalCurrentUser();
-}
-
-function loadDismissedNewIds() {
-  try {
-    const raw = localStorage.getItem(DISMISSED_NEW_IDS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.map(cleanText).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveDismissedNewIds(ids) {
-  try {
-    localStorage.setItem(DISMISSED_NEW_IDS_KEY, JSON.stringify(uniqueStrings(ids || [])));
-  } catch {
-    // stil falen
-  }
-}
-
-function pruneDismissedNewIds(ids) {
-  const validIds = new Set((state.appointments || []).map(a => cleanText(a.id)).filter(Boolean));
-  const next = uniqueStrings((ids || []).filter(id => validIds.has(id)));
-  saveDismissedNewIds(next);
-  return next;
-}
-
-function dismissNewAppointment(id) {
-  const cleanId = cleanText(id);
-  if (!cleanId) return;
-  if (!dismissedNewIds.includes(cleanId)) {
-    dismissedNewIds.push(cleanId);
-    dismissedNewIds = uniqueStrings(dismissedNewIds);
-    saveDismissedNewIds(dismissedNewIds);
-  }
-  refreshAll();
-}
-
 function getNewAppointments() {
   if (!lastSeenAt) return [];
-  return state.appointments.filter(isAppointmentNew).filter(a => !dismissedNewIds.includes(a.id));
+  return state.appointments.filter(isAppointmentNew);
 }
 
 function isAppointmentNew(appointment) {
@@ -1249,9 +1148,7 @@ function isAppointmentNew(appointment) {
 }
 
 function markCurrentAppointmentsAsSeenSoon() {
-  if (lastSeenAt) return;
   setTimeout(() => {
-    if (lastSeenAt) return;
     const now = new Date().toISOString();
     lastSeenAt = now;
     saveLastSeenAt(now);
@@ -1268,7 +1165,6 @@ function saveUserName() {
   }
   clearUserNameError();
   state.currentUser = name;
-  saveLocalCurrentUser(name);
   rememberName(name);
   persistAndRefresh();
   els.nameDialog.close();
@@ -1367,10 +1263,8 @@ function importData(event) {
     }
 
     state = result.state;
-    applyLocalCurrentUserToState();
     selectedDate = todayString();
     selectedMonthDate = todayString();
-    dismissedNewIds = pruneDismissedNewIds(dismissedNewIds);
     persistAndRefresh();
     showToast(result.message || 'Back-up geïmporteerd.');
     event.target.value = '';
@@ -1420,10 +1314,8 @@ function importShareCode(code) {
   }
 
   state = result.state;
-  applyLocalCurrentUserToState();
   selectedDate = todayString();
   selectedMonthDate = todayString();
-  dismissedNewIds = pruneDismissedNewIds(dismissedNewIds);
   persistAndRefresh();
   els.shareCodeArea.classList.add('hidden');
   els.shareCodeInput.value = '';
@@ -1567,29 +1459,19 @@ function validateOptionalPersonName(value, label) {
 
 function persistAndRefresh() {
   state = sanitizeState(state);
-  applyLocalCurrentUserToState();
   saveStateLocal(state);
   refreshAll();
   syncStateToServer();
 }
 
 function saveStateLocal(data = state) {
-  const payload = sanitizeState(data);
-  payload.currentUser = loadLocalCurrentUser();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeState(data)));
 }
 
 function loadStateLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = sanitizeState(JSON.parse(raw));
-      if (parsed.currentUser && !loadLocalCurrentUser()) {
-        saveLocalCurrentUser(parsed.currentUser);
-      }
-      parsed.currentUser = loadLocalCurrentUser();
-      return parsed;
-    }
+    if (raw) return sanitizeState(JSON.parse(raw));
 
     for (const legacyKey of LEGACY_STORAGE_KEYS) {
       const legacyRaw = localStorage.getItem(legacyKey);
@@ -1597,21 +1479,13 @@ function loadStateLocal() {
       const parsed = JSON.parse(legacyRaw);
       const source = parsed && typeof parsed === 'object' && parsed.data ? parsed.data : parsed;
       const migrated = sanitizeState(source);
-      if (migrated.currentUser && !loadLocalCurrentUser()) {
-        saveLocalCurrentUser(migrated.currentUser);
-      }
-      migrated.currentUser = loadLocalCurrentUser();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
       return migrated;
     }
 
-    const empty = structuredCloneSafe(EMPTY_STATE);
-    empty.currentUser = loadLocalCurrentUser();
-    return empty;
+    return structuredCloneSafe(EMPTY_STATE);
   } catch {
-    const empty = structuredCloneSafe(EMPTY_STATE);
-    empty.currentUser = loadLocalCurrentUser();
-    return empty;
+    return structuredCloneSafe(EMPTY_STATE);
   }
 }
 
@@ -1629,7 +1503,6 @@ async function loadStateFromServer() {
 
     const data = await res.json();
     state = sanitizeState(data);
-    state.currentUser = loadLocalCurrentUser();
     saveStateLocal(state);
   } catch {
     state = loadStateLocal();
@@ -1637,13 +1510,16 @@ async function loadStateFromServer() {
 }
 
 async function syncStateToServer() {
-  if (syncInProgress) return;
+  if (syncInProgress) {
+    syncQueued = true;
+    return;
+  }
+
   syncInProgress = true;
+  syncQueued = false;
 
   try {
     const payload = sanitizeState(state);
-    payload.currentUser = '';
-
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: {
@@ -1656,10 +1532,21 @@ async function syncStateToServer() {
     if (!res.ok) {
       throw new Error('Server save failed');
     }
+
+    const response = await res.json().catch(() => null);
+    if (response && response.state) {
+      state = sanitizeState(response.state);
+      saveStateLocal(state);
+      refreshAll();
+    }
   } catch {
     showToast('Opslaan online is mislukt. Alleen lokaal bewaard.', true);
   } finally {
     syncInProgress = false;
+    if (syncQueued) {
+      syncQueued = false;
+      syncStateToServer();
+    }
   }
 }
 
@@ -1677,9 +1564,7 @@ async function syncFromServerAndRefresh() {
 
     const data = await res.json();
     state = sanitizeState(data);
-    state.currentUser = loadLocalCurrentUser();
     saveStateLocal(state);
-    dismissedNewIds = pruneDismissedNewIds(dismissedNewIds);
     refreshAll();
     markCurrentAppointmentsAsSeenSoon();
   } catch {
@@ -1702,6 +1587,7 @@ function sanitizeState(input) {
     safe.appointments = Array.isArray(source.appointments)
       ? source.appointments.map(sanitizeAppointment).filter(Boolean)
       : [];
+    safe.deletedAppointmentIds = uniqueStrings(Array.isArray(source.deletedAppointmentIds) ? source.deletedAppointmentIds : []);
   }
 
   return safe;
